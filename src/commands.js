@@ -1,6 +1,5 @@
-
 export function registerCommands(bot) {
-  const messageCounts = new Map()
+  const spamTracker = new Map()
   const WINDOW_MS = 60_000
   const SPAM_LIMIT = 5
 
@@ -26,20 +25,19 @@ export function registerCommands(bot) {
     )
   )
 
-  // Welcome new members
+  // Welcome new human members
   bot.on("message:new_chat_members", async (ctx) => {
     if (ctx.chat.type === "private") return
 
-    for (const member of ctx.message.new_chat_members) {
-      if (member.is_bot) continue
+    for (const user of ctx.message.new_chat_members) {
+      if (user.is_bot) continue
 
       await ctx.reply(
-        `👋 Welcome, ${member.first_name}!\nWelcome to the group! 🛡️`
+        `👋 Welcome, ${user.first_name}! Welcome to the group.`
       )
     }
   })
 
-  // Moderate group text messages
   bot.on("message:text", async (ctx) => {
     if (ctx.chat.type === "private") return
     if (!ctx.from || ctx.from.is_bot) return
@@ -47,43 +45,41 @@ export function registerCommands(bot) {
     try {
       const member = await ctx.getChatMember(ctx.from.id)
 
-      // Do not moderate group admins or the owner
+      // Ignore admins and group owner
       if (
         member.status === "creator" ||
         member.status === "administrator"
       ) return
 
-      const text = ctx.message.text
+      const text = ctx.message.text.trim()
+      if (!text) return
 
       // Delete links from regular members
       const hasLink =
-        /https?:\/\/\S+|t\.me\/\S+|telegram\.me\/\S+|www\.\S+/i.test(text)
+        /https?:\/\/\S+|www\.\S+|t\.me\/\S+|telegram\.me\/\S+/i.test(text)
 
       if (hasLink) {
         await ctx.deleteMessage()
         return
       }
 
-      // Count identical messages per user in each group
-      const normalized = text.trim().toLowerCase()
-      if (!normalized) return
-
+      // Detect repeated identical messages within 60 seconds
+      const normalized = text.toLowerCase().replace(/\s+/g, " ")
       const key = `${ctx.chat.id}:${ctx.from.id}:${normalized}`
       const now = Date.now()
-      let record = messageCounts.get(key)
+      let record = spamTracker.get(key)
 
       if (!record || now - record.startedAt > WINDOW_MS) {
         record = { startedAt: now, count: 1 }
-        messageCounts.set(key, record)
+        spamTracker.set(key, record)
         return
       }
 
       record.count += 1
 
-      // Delete repeated copies; keep the first message
+      // Delete each repeated copy; keep the first message
       await ctx.deleteMessage()
 
-      // Restrict after more than 5 identical messages
       if (record.count > SPAM_LIMIT) {
         await ctx.api.restrictChatMember(
           ctx.chat.id,
@@ -92,14 +88,10 @@ export function registerCommands(bot) {
           { until_date: Math.floor(Date.now() / 1000) + 600 }
         )
 
-        messageCounts.delete(key)
-
-        await ctx.reply(
-          `🚫 ${ctx.from.first_name} has been restricted for 10 minutes for spam.`
-        )
+        spamTracker.delete(key)
       }
-    } catch (error) {
-      console.error("Night Guard moderation error:", error)
+    } catch (err) {
+      console.error("Night Guard moderation error:", err)
     }
   })
 }
