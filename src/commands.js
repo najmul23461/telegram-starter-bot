@@ -1,24 +1,46 @@
-// Your bot's behaviour. Add commands here; grammY's docs (grammy.dev) cover
-// keyboards, sessions, files, inline queries and everything else.
-
-import { InlineKeyboard } from "grammy"
-
 export function registerCommands(bot) {
   bot.command("start", (ctx) =>
-    ctx.reply(`Hi ${ctx.from?.first_name ?? "there"}. I am alive and hosted on FadeHost. Send /help to see what I can do.`, {
-      reply_markup: new InlineKeyboard().text("Ping me", "ping"),
-    }),
-  )
+    ctx.reply("🛡️ Night Guard is online!")
+  );
 
   bot.command("help", (ctx) =>
-    ctx.reply(["Commands:", "/start  say hello", "/help   this list", "/ping   check I am awake", "/id     show chat and user ids", "", "Send me any text and I echo it back."].join("\n")),
-  )
+    ctx.reply("Night Guard link protection is active.")
+  );
 
-  bot.command("ping", (ctx) => ctx.reply("pong"))
+  bot.command("ping", (ctx) =>
+    ctx.reply("pong")
+  );
 
-  bot.command("id", (ctx) => ctx.reply(`Chat id: ${ctx.chat.id}\nYour id: ${ctx.from?.id ?? "unknown"}`))
+  bot.command("id", (ctx) =>
+    ctx.reply(`Chat ID: ${ctx.chat.id}\nYour ID: ${ctx.from.id}`)
+  );
 
-  bot.callbackQuery("ping", (ctx) => ctx.answerCallbackQuery({ text: "pong" }))
+  bot.on("message", async (ctx) => {
+    if (!["group", "supergroup"].includes(ctx.chat.type)) return;
+    if (ctx.from?.is_bot) return;
 
-  bot.on("message:text", (ctx) => ctx.reply(ctx.message.text))
+    const text = [
+      ctx.message.text,
+      ctx.message.caption,
+      ...(ctx.message.entities || []).map(e =>
+        e.type === "url" ? ctx.message.text?.slice(e.offset, e.offset + e.length) : ""
+      ),
+      ...(ctx.message.caption_entities || []).map(e =>
+        e.type === "text_link" ? e.url : ""
+      )
+    ].filter(Boolean).join(" ");
+
+    const hasLink =
+      /https?:\/\/\S+|www\.\S+|t\.me\/\S+|telegram\.me\/\S+/i.test(text) ||
+      (ctx.message.entities || []).some(e => e.type === "text_link") ||
+      (ctx.message.caption_entities || []).some(e => e.type === "text_link");
+
+    if (!hasLink) return;
+
+    try {
+      await ctx.deleteMessage();
+    } catch (error) {
+      console.error("Link deletion failed:", error.message);
+    }
+  });
 }
